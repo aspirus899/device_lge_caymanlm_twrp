@@ -1,62 +1,68 @@
-name: Build TWRP
+name: TWRP CI Build
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-    - name: Free up disk space
-      run: |
-        echo "Before cleanup:"
-        df -h
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
-        sudo apt clean
-        echo "After cleanup:"
-        df -h
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Install required packages
+    - name: Install dependencies
       run: |
-        sudo dpkg --add-architecture i386
-        sudo apt update
-        sudo apt install -y git bc bison build-essential curl flex g++-multilib gcc-multilib             gnupg gperf imagemagick libncurses5-dev libxml2 libssl-dev lzop             pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev             liblz4-tool lib32z1 lib32ncurses-dev libssl-dev lz4 unzip             python-is-python3
+        sudo apt-get update
+        sudo apt-get install -y \
+          git wget curl unzip python3 \
+          openjdk-8-jdk bc bison build-essential \
+          ccache flex g++-multilib gcc-multilib \
+          gnupg gperf imagemagick lib32ncurses-dev \
+          lib32readline-dev lib32z1-dev liblz4-tool \
+          libncurses5-dev libsdl1.2-dev libssl-dev \
+          libxml2 libxml2-utils lzop pngcrush \
+          rsync schedtool squashfs-tools xsltproc \
+          zip zlib1g-dev
 
-    - name: Set up cache for .repo
-      uses: actions/cache@v4
-      with:
-        path: ~/twrp/.repo
-        key: ${{ runner.os }}-repo-cache
+    - name: Install repo
+      run: |
+        mkdir -p ~/bin
+        curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Init repo
       run: |
-        mkdir -p ~/twrp
-        cd ~/twrp
-        curl https://storage.googleapis.com/git-repo-downloads/repo > repo
-        chmod a+x repo
-        sudo mv repo /usr/local/bin/repo
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
+        mkdir ~/twrp && cd ~/twrp
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+
+    - name: Add roomservice
+      run: |
+        mkdir -p ~/twrp/.repo/local_manifests
+        cat > ~/twrp/.repo/local_manifests/roomservice.xml <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="aspirus899/device_lge_caymanlm_twrp" path="device/lge/caymanlm" remote="github" revision="main" />
+</manifest>
+EOF
 
     - name: Sync repo
       run: |
         cd ~/twrp
-        repo sync -j2 --force-sync --no-tags --no-clone-bundle
+        repo sync --force-sync --no-tags --no-clone-bundle -j$(nproc)
 
-    - name: Clone device tree
-      run: |
-        cd ~/twrp
-        git clone https://github.com/aspirus899/device_lge_caymanlm_twrp.git -b main device/lge/caymanlm
-
-    - name: Build TWRP
+    - name: Lunch + Build
       run: |
         cd ~/twrp
         source build/envsetup.sh
         lunch omni_caymanlm-eng
         mka recoveryimage
 
-    - name: Upload output
+    - name: Upload TWRP
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: twrp-output
+        name: twrp-recovery
         path: ~/twrp/out/target/product/caymanlm/recovery.img
