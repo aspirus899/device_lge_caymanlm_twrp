@@ -1,4 +1,4 @@
-name: Build TWRP Recovery
+name: Build TWRP for caymanlm
 
 on:
   push:
@@ -10,45 +10,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Set up job
-      run: echo "Starting TWRP CI"
-
-    - name: Checkout source
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install dependencies (with fallback)
+    - name: Install dependencies
       run: |
         sudo apt-get update
+
+        # Основні пакети
         sudo apt-get install -y \
-          bc bison build-essential curl flex git kmod \
-          libssl-dev libelf-dev python3 python3-distutils python3-apt unzip zip || true
-        sudo apt-get install -y libncurses-dev libtinfo-dev lib32ncurses-dev || true
+          bc bison build-essential ccache curl flex git kmod liblz4-tool \
+          libssl-dev lzop pngcrush rsync schedtool squashfs-tools \
+          xsltproc zip zlib1g-dev imagemagick device-tree-compiler \
+          openjdk-8-jdk android-sdk-libsparse-utils repo \
+          libncurses-dev libtinfo-dev libncursesw5-dev || true
 
-    - name: Install repo tool
+        # Fallback на новіші версії
+        sudo apt-get install -y \
+          libncurses6 libncursesw6 libtinfo6 || true
+
+    - name: Init repo
       run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+rx ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
-
-    - name: Set up repo workspace
-      run: mkdir -p ~/twrp
-
-    - name: Cache .repo folder
-      uses: actions/cache@v4
-      with:
-        path: ~/twrp/.repo
-        key: ${{ runner.os }}-repo-cache-twrp
-
-    - name: Init TWRP repo
-      run: |
-        cd ~/twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
-
-    - name: Sync TWRP repo
-      run: |
-        cd ~/twrp
-        repo sync --force-sync -j$(nproc --all)
+        mkdir ~/twrp && cd ~/twrp
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-13.0
+        repo sync --force-sync --no-tags --no-clone-bundle
 
     - name: Clone device tree
       run: |
@@ -58,18 +43,12 @@ jobs:
     - name: Build TWRP
       run: |
         cd ~/twrp
-        export ALLOW_MISSING_DEPENDENCIES=true
         . build/envsetup.sh
         lunch omni_caymanlm-eng
         mka recoveryimage
 
-    - name: Check recovery.img exists
-      run: |
-        test -f ~/twrp/out/target/product/caymanlm/recovery.img
-
-    - name: Upload recovery image
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: twrp-caymanlm
         path: ~/twrp/out/target/product/caymanlm/recovery.img
-
