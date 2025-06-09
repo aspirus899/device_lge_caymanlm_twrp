@@ -1,0 +1,42 @@
+name: Build TWRP (Lightweight)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout device tree
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-core gnupg flex bison build-essential             zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386             lib32ncurses5-dev lib32z1-dev liblz4-tool libncurses5 libssl-dev             libxml2 libxml2-utils xsltproc unzip bc python-is-python3
+
+      - name: Clone minimal TWRP source
+        run: |
+          mkdir -p ~/twrp && cd ~/twrp
+          git clone https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp -b twrp-12.1 .repo/manifests
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp -b twrp-12.1 --no-repo-verify
+          repo sync -c --force-sync --no-tags --no-clone-bundle -j2
+
+      - name: Copy device tree into source
+        run: |
+          cp -r $GITHUB_WORKSPACE/device ~/twrp/device
+
+      - name: Start build
+        run: |
+          cd ~/twrp
+          . build/envsetup.sh
+          lunch twrp_caymanlm-eng
+          mka recoveryimage
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery.img
+          path: ~/twrp/out/target/product/caymanlm/recovery.img
