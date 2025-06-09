@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/upload-artifact@v4
 
       - name: Set up environment
         run: |
@@ -42,7 +42,7 @@ jobs:
           mka recoveryimage
 
       - name: Upload recovery image
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: twrp-recovery-img
           path: ~/twrp/out/target/product/caymanlm/recovery.img
