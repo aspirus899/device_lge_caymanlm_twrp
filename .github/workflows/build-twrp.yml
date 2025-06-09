@@ -17,11 +17,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git gnupg gperf libncurses5-dev             libssl-dev libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip             zlib1g-dev imagemagick openjdk-8-jdk python2 python3
 
-      - name: Init repo
+      - name: Init TWRP repo
         run: |
           mkdir -p ~/twrp && cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
-          repo sync -j4
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-13.0
+          repo sync -c --force-sync --no-clone-bundle --no-tags -j4
 
       - name: Clone device tree
         run: |
