@@ -1,42 +1,52 @@
-name: Build TWRP (Lightweight)
+name: Build TWRP
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout device tree
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git-core gnupg flex bison build-essential             zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386             lib32ncurses5-dev lib32z1-dev liblz4-tool libncurses5 libssl-dev             libxml2 libxml2-utils xsltproc unzip bc python-is-python3
+          sudo apt-get install -y \
+            bc bison build-essential curl flex git gnupg gperf imagemagick \
+            lib32z1-dev liblz4-tool libncurses5-dev libncurses-dev \
+            libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+            schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            openjdk-11-jdk python-is-python3
 
-      - name: Clone minimal TWRP source
+          # fallback для ncurses, якщо не знайдені
+          sudo apt-get install -y libncurses5 || echo "libncurses5 not found, continuing..."
+          sudo apt-get install -y lib32ncurses5 || echo "lib32ncurses5 not found, continuing..."
+
+      - name: Set up repo
         run: |
-          mkdir -p ~/twrp && cd ~/twrp
-          git clone https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp -b twrp-12.1 .repo/manifests
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp -b twrp-12.1 --no-repo-verify
-          repo sync -c --force-sync --no-tags --no-clone-bundle -j2
+          mkdir ~/twrp && cd ~/twrp
+          curl https://storage.googleapis.com/git-repo-downloads/repo > repo
+          chmod a+x repo
+          sudo mv repo /usr/local/bin/
 
-      - name: Copy device tree into source
-        run: |
-          cp -r $GITHUB_WORKSPACE/device ~/twrp/device
-
-      - name: Start build
+      - name: Init repo
         run: |
           cd ~/twrp
-          . build/envsetup.sh
-          lunch twrp_caymanlm-eng
-          mka recoveryimage
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Sync repo
+        run: |
+          cd ~/twrp
+          repo sync --force-sync
+
+      - name: Cache .repo
+        uses: actions/cache@v4
         with:
-          name: recovery.img
-          path: ~/twrp/out/target/product/caymanlm/recovery.img
+          path: ~/twrp/.repo
+          key: ${{ runner.os }}-twrp-repo-cache
+          restore-keys: |
+            ${{ runner.os }}-twrp-
+
