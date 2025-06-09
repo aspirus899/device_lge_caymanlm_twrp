@@ -5,48 +5,58 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Free up disk space
+      run: |
+        echo "Before cleanup:"
+        df -h
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+        sudo apt clean
+        echo "After cleanup:"
+        df -h
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison build-essential curl flex git gnupg gperf imagemagick \
-            lib32z1-dev liblz4-tool libncurses5-dev libncurses-dev \
-            libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
-            schedtool squashfs-tools xsltproc zip zlib1g-dev \
-            openjdk-11-jdk python-is-python3
+    - name: Install required packages
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt update
+        sudo apt install -y git bc bison build-essential curl flex g++-multilib gcc-multilib             gnupg gperf imagemagick libncurses5-dev libxml2 libssl-dev lzop             pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev             liblz4-tool lib32z1 lib32ncurses-dev libssl-dev lz4 unzip             python-is-python3
 
-          # fallback для ncurses, якщо не знайдені
-          sudo apt-get install -y libncurses5 || echo "libncurses5 not found, continuing..."
-          sudo apt-get install -y lib32ncurses5 || echo "lib32ncurses5 not found, continuing..."
+    - name: Set up cache for .repo
+      uses: actions/cache@v4
+      with:
+        path: ~/twrp/.repo
+        key: ${{ runner.os }}-repo-cache
 
-      - name: Set up repo
-        run: |
-          mkdir ~/twrp && cd ~/twrp
-          curl https://storage.googleapis.com/git-repo-downloads/repo > repo
-          chmod a+x repo
-          sudo mv repo /usr/local/bin/
+    - name: Init repo
+      run: |
+        mkdir -p ~/twrp
+        cd ~/twrp
+        curl https://storage.googleapis.com/git-repo-downloads/repo > repo
+        chmod a+x repo
+        sudo mv repo /usr/local/bin/repo
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
 
-      - name: Init repo
-        run: |
-          cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+    - name: Sync repo
+      run: |
+        cd ~/twrp
+        repo sync -j2 --force-sync --no-tags --no-clone-bundle
 
-      - name: Sync repo
-        run: |
-          cd ~/twrp
-          repo sync --force-sync
+    - name: Clone device tree
+      run: |
+        cd ~/twrp
+        git clone https://github.com/aspirus899/device_lge_caymanlm_twrp.git -b main device/lge/caymanlm
 
-      - name: Cache .repo
-        uses: actions/cache@v4
-        with:
-          path: ~/twrp/.repo
-          key: ${{ runner.os }}-twrp-repo-cache
-          restore-keys: |
-            ${{ runner.os }}-twrp-
+    - name: Build TWRP
+      run: |
+        cd ~/twrp
+        source build/envsetup.sh
+        lunch omni_caymanlm-eng
+        mka recoveryimage
 
+    - name: Upload output
+      uses: actions/upload-artifact@v4
+      with:
+        name: twrp-output
+        path: ~/twrp/out/target/product/caymanlm/recovery.img
