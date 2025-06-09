@@ -1,9 +1,6 @@
-name: Build TWRP Recovery
+name: Build TWRP (Minimal Sync)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -11,62 +8,59 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex \
-            git gnupg gperf libncurses5-dev libssl-dev libxml2-utils \
-            lzop pngcrush schedtool squashfs-tools xsltproc zip zlib1g-dev \
-            python-is-python3 openjdk-11-jdk repo imagemagick
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib           libc6-dev-i386 lib32ncurses5-dev lib32z1-dev lib32stdc++6 x11proto-core-dev libx11-dev libgl1-mesa-dev           libxml2-utils xsltproc unzip fontconfig python-is-python3 python3-pip ccache rsync libtinfo5 libncurses5
 
-      - name: Set up repo tool
-        run: |
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+rx ~/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-twrp
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
-      - name: Set up repo workspace
-        run: mkdir -p ~/twrp
+    - name: Init repo (minimal)
+      run: |
+        mkdir -p ~/twrp && cd ~/twrp
+        sudo pip3 install repo-helper
+        curl -Lo repo https://storage.googleapis.com/git-repo-downloads/repo
+        chmod a+x repo
+        sudo mv repo /usr/local/bin/
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-13.0 --depth=1
+        echo '
+        [
+          {
+            "repository": "https://github.com/aspirus899/device_lge_caymanlm_twrp",
+            "target_path": "device/lge/caymanlm",
+            "branch": "main"
+          }
+        ]
+        ' > .repo/local_manifests/local_manifest.json
 
-      - name: Cache .repo folder
-        uses: actions/cache@v4
-        with:
-          path: ~/twrp/.repo
-          key: ${{ runner.os }}-twrp-${{ hashFiles('.github/workflows/build-twrp.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-twrp-
+    - name: Sync repo
+      run: |
+        cd ~/twrp
+        repo sync --force-sync -c --no-tags --no-clone-bundle -j$(nproc --all)
+        rm -rf .repo/project-objects .repo/projects .repo/manifests.git
 
-      - name: Init TWRP repo
-        run: |
-          cd ~/twrp
-          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
+    - name: Start build
+      run: |
+        cd ~/twrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_EXEC=$(which ccache)
+        export USE_CCACHE=1
+        ccache -M 2G
+        . build/envsetup.sh
+        lunch twrp_caymanlm-eng
+        mka recoveryimage
 
-      - name: Sync TWRP repo
-        run: |
-          cd ~/twrp
-          repo sync --force-sync -j$(nproc --all)
-
-      - name: Clone device tree
-        run: |
-          cd ~/twrp
-          git clone https://github.com/aspirus899/device_lge_caymanlm_twrp.git device/lge/caymanlm
-
-      - name: Build TWRP
-        run: |
-          cd ~/twrp
-          source build/envsetup.sh
-          lunch twrp_caymanlm-eng
-          mka recoveryimage
-
-      - name: Check recovery.img exists
-        run: test -f ~/twrp/out/target/product/caymanlm/recovery.img
-
-      - name: Upload recovery image
-        uses: actions/upload-artifact@v4
-        with:
-          name: twrp-recovery
-          path: ~/twrp/out/target/product/caymanlm/recovery.img
+    - name: Upload recovery image
+      uses: actions/upload-artifact@v4
+      with:
+        name: twrp-caymanlm
+        path: ~/twrp/out/target/product/caymanlm/recovery.img
