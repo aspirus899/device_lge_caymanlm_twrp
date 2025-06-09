@@ -1,49 +1,63 @@
-name: Build TWRP
+name: Build TWRP for caymanlm
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
+    - name: Очистити місце на runner'і
       run: |
-        sudo apt update
-        sudo apt install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev         libc6-dev libncurses5-dev x11proto-core-dev libx11-dev libgl1-mesa-dev         libxml2-utils xsltproc unzip fontconfig python-is-python3 rsync
+        sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache /usr/local/share/boost \
+                     /usr/local/.ghcup /usr/local/share/powershell /usr/local/lib/android
+        sudo apt-get clean
+        df -h
 
-    - name: Install repo
+    - name: Встановлення залежностей
       run: |
-        mkdir -p ~/.bin
-        curl -o ~/.bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-        chmod +x ~/.bin/repo
-        echo "$HOME/.bin" >> $GITHUB_PATH
+        sudo apt-get update
+        sudo apt-get install -y \
+          bc bison build-essential curl flex git kmod liblz4-tool \
+          libncurses5-dev libssl-dev libxml2-utils lzop pngcrush rsync \
+          schedtool squashfs-tools xsltproc zip zlib1g-dev \
+          lib32z1 lib32stdc++6 libc6-dev-i386 g++-multilib
 
-    - name: Sync sources
+    - name: Встановити repo
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo 'export PATH=~/bin:$PATH' >> ~/.bashrc
+        source ~/.bashrc
+
+    - name: Ініціалізація репозиторію
       run: |
         mkdir -p ~/twrp && cd ~/twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
-        repo sync --force-sync -j$(nproc --all)
+        ~/bin/repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
 
-    - name: Clone device tree
+    - name: Repo Sync
       run: |
         cd ~/twrp
-        git clone https://github.com/aspirus899/device_lge_caymanlm_twrp.git device/lge/caymanlm
+        ~/bin/repo sync -c --no-tags --no-clone-bundle --force-sync
 
-    - name: Build recovery
+    - name: Клонування пристрою
+      run: |
+        cd ~/twrp
+        mkdir -p device/lge
+        git clone https://github.com/aspirus899/android_device_lge_caymanlm_twrp.git device/lge/caymanlm
+
+    - name: Збірка TWRP
       run: |
         cd ~/twrp
         source build/envsetup.sh
-        lunch twrp_caymanlm-eng
+        lunch omni_caymanlm-eng
         mka recoveryimage
 
-    - name: Upload artifact
+    - name: Завантаження артефактів
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: twrp.img
+        name: twrp-caymanlm
         path: ~/twrp/out/target/product/caymanlm/recovery.img
